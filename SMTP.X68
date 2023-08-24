@@ -118,10 +118,9 @@ PREPVRAM *бшвхякемхе юдпеяю бхденоюлърх б D6 х оепемня ецн б сопюбкъчыхи онпр VD
     DC.B 'E' пецхнм
 *==================================================================
 *                               Z80
-Z80RAM equ $A00000 мювюкн оюлърх Z80
+*   Z80RAM equ $A00000 мювюкн оюлърх Z80
 *йнмеж нгс $A0FFFF
-Z80BUS equ $A11100 гюопня ьхмш Z80 #$100 WORD
-Z80RES equ $A11200 яапня Z80 #$000 WORD
+*   Z80RES equ $A11200 яапня Z80 #$000 WORD
 *==================================================================
 *                               VDP
 VDPCONTROL equ $C00004      сопюбкъчыхи онпр
@@ -150,7 +149,7 @@ RAM     equ $FF0000
     ORG	    $0200        
     
 START 
-    nop
+    
 *    MOVE.L #VRAMTILES+15,D6
 *    JSR PREPVRAMREAD  НРКЮДНВМЮЪ ТСМЙЖХЪ ДКЪ ПЕЛНМРЮ prevram
 *CHECK:    
@@ -162,7 +161,7 @@ START
    * MOVE.W #$100,Z80BUS гюопюьхбюел ьхмс Z80
    * MOVE.W #$000,Z80RES сярюмюбкхбел яапня Z80
 
-   
+
 
 
     
@@ -205,7 +204,18 @@ LOOP0
     MOVE.W #$8F02,(VDPCONTROL) вхярхл оюлърэ мю бяъйхи яксвюи =)
 
 
-    JMP RTBLOGO опнцпюллю кнцнрхою
+    PEA sampbank
+    PEA seqbank
+    PEA envbank
+    PEA patchbank
+
+
+    PEA RTBLOGO
+
+    JMP gemsinit
+
+
+    *bra RTBLOGO *опнцпюллю кнцнрхою
     
 
     
@@ -1064,6 +1074,13 @@ Kos_Decomp_Done:
     
 
 RTBLOGO
+    
+    LEA $10(A7),A7       *ДНОНКМЕМХЕ НР ЯЕАЪ ВРН АШ БНЯЯРЮМНБХРЭ ЯРЕЙ ОНЯКЕ gemsinit
+    MOVE.B #0,(A7)
+    JSR gemsstartsong    *гЮОСЯЙЮЕЛ ЛЕКНДХЧ ЛЕМЧ
+
+    
+
     
 *    MOVE.L #$C0020000,D6 юдпея мювюкю оюкхрпш кнцн
 *    JSR PREPVRAM цнрнбхл бхденоюлърэ
@@ -2905,13 +2922,6 @@ LEVEL0
     
 *    RTS
 
-
-
-
-
-
-
-
 LEVEL0BTILES INCBIN "tilemap\res\level0btiles.bin"
 LEVEL0BTILEMAP INCBIN "tilemap\res\level0btilemap.bin"
 LEVEL0BPALITRA INCBIN "tilemap\res\level0bpalitra.bin"
@@ -2921,7 +2931,6 @@ MENUWINDOWTILEMAP INCBIN "tilemap\res\menuwindowtilemap.bin"
 MENUTEXT INCBIN "tilemap\res\menutext.bin"
 
 
-    
 *===================================================================================================================
     
 RTBLOGOTILES
@@ -2930,8 +2939,8 @@ RTBLOGOTILES
      
 *==============================================================================================================
  
-    INCLUDE "MONITOR.X68" *опнцпюллю лнмхрнпю дкъ нркюдйх
-    
+    INCLUDE "MONITOR.X68" *опнцпюллю лнмхрнпю дкъ нркюдйх   
+    INCLUDE "SMTP\GEMS.A" *гБСЙНБНИ ДПЮИБЕП+ГЮОВЮЯРХ  
   
 
    
