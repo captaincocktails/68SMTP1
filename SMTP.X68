@@ -318,8 +318,9 @@ CLEARTILES
     
     MOVE.W #$9780,(VDPCONTROL) рхо DMA
     MOVE.L #$40000080+(($0000&$3FFF)<<16)+(($0000&$C000)>>14),(VDPCONTROL) юдпея мюгмювемхъ $XXXX&$3FFF) - ($XXXX&$C000)
-    
+
     MOVE.W #$0000,(VDPDATA) гмювемхе дкъ гюонкмемхъ #$yy00
+
     MOVEM.L (A7)+,D0-D7/A0-A7 бнгбпюыюел пецхярпш хг ярюйю
 *    MOVE.W #$8F02,(VDPCONTROL) бнгбпюыюел юбрнякнфемхе мю 2, 32у ахрмне якнбн
     RTS 
@@ -337,8 +338,9 @@ CLEARTILEMAPA  *нрвхярйю рюиклюою ю
     
     MOVE.W #$9780,(VDPCONTROL) рхо DMA
     MOVE.L #$40000080+(($C000&$3FFF)<<16)+(($C000&$C000)>>14),(VDPCONTROL) юдпея мюгмювемхъ $C000&$3FFF) - ($D7FF&$C000)
-    
+ 
     MOVE.W #$0000,(VDPDATA) гмювемхе дкъ гюонкмемхъ #$yy00 гюосяйюел DMA
+
     MOVEM.L (A7)+,D0-D7/A0-A7 бнгбпюыюел пецхярпш хг ярюйю
 *    MOVE.W #$8F02,(VDPCONTROL) бнгбпюыюел юбрнякнфемхе мю 2, 32у ахрмне якнбн
     RTS   
@@ -357,8 +359,9 @@ CLEARTILEMAPB         *нрвхярйю рюиклюою б
     
     MOVE.W #$9780,(VDPCONTROL) рхо DMA
     MOVE.L #$40000080+(($E000&$3FFF)<<16)+(($E000&$C000)>>14),(VDPCONTROL) юдпея мюгмювемхъ $C000&$3FFF) - ($D7FF&$C000)
-    
+
     MOVE.W #$0000,(VDPDATA) гмювемхе дкъ гюонкмемхъ #$yy00
+ 
     MOVEM.L (A7)+,D0-D7/A0-A7 бнгбпюыюел пецхярпш хг ярюйю
 *    MOVE.W #$8F02,(VDPCONTROL) бнгбпюыюел юбрнякнфемхе мю 2, 32у ахрмне якнбн
     RTS 
@@ -1076,7 +1079,7 @@ Kos_Decomp_Done:
 RTBLOGO
     
     LEA $10(A7),A7       *ДНОНКМЕМХЕ НР ЯЕАЪ ВРН АШ БНЯЯРЮМНБХРЭ ЯРЕЙ ОНЯКЕ gemsinit
-    MOVE.B #0,(A7)
+    MOVE.L #0,(A7)
     JSR gemsstartsong    *гЮОСЯЙЮЕЛ ЛЕКНДХЧ ЛЕМЧ
 
     
@@ -1186,8 +1189,9 @@ MENUSKIP            *дКЪ ОПНОСЯЙЮ ЛЕМЧ ДКЪ дЕАЮЦЮ
     move.w #$9700+((($FF0000>>1)&$7F0000)>>16),(VDPCONTROL) бшяьхи юдпея хярнвмхйю
 
 *    to CRAM:    
-
+    jsr gemsdmastart
     move.l #$C0000080+($02<<16),(VDPCONTROL)
+    jsr gemsdmaend
     RTS
     
 .DMA2
@@ -1199,8 +1203,9 @@ MENUSKIP            *дКЪ ОПНОСЯЙЮ ЛЕМЧ ДКЪ дЕАЮЦЮ
     move.w #$9700+((($FF0000>>1)&$7F0000)>>16),(VDPCONTROL) бшяьхи юдпея хярнвмхйю
 
 *    to CRAM:    
-
+    jsr gemsdmastart
     move.l #$C0000080+($02<<16),(VDPCONTROL)
+    jsr gemsdmaend
     RTS
 *========================================================================================================================
 GLOBALFADE *цкнаюкэмне гюрсуюмхе оюкхрпш х бнгбпюр он юдпеяс (A6)
@@ -1301,8 +1306,9 @@ GLOBALFADE *цкнаюкэмне гюрсуюмхе оюкхрпш х бнгбпюр он юдпеяс (A6)
     move.w #$9700+((($FF0000>>1)&$7F0000)>>16),(VDPCONTROL) бшяьхи юдпея хярнвмхйю
 
 *    to CRAM:    
-
+    jsr gemsdmastart
     move.l #$C0000080+($00<<16),(VDPCONTROL)
+    jsr gemsdmaend
     RTS    
     
 *=================================================================================================================    
@@ -1363,11 +1369,13 @@ FADETOPAL *б мювюкн RAM гюцпсфюеряъ оюкхрпю б йнрнпсч мсфмн бнгбеярхяэ бнгбпюр б
 	
     DBRA D2,.L  
     
-    
+    MOVE.L #$C0000000,VDPCONTROL  *бшярюбкъел юдпея оюкхрпш бхденвхою (ЦНРНБХЛЯЪ ДКЪ dma)
+    LEA VDPDATA,A1             *гюмняхл юдпея онпрю дюммшу
+    MOVE.L #$FF0088,A0             *гюмняхл юдпея мювюкю бпелеммни оюкхрпш
     
     JSR VBLANKSTART
     
-    JSR .DMA			*нряшкйю бпелеммни рпюмятнплюжхх б бхденвхо
+    JSR FULLPALITRADROP			*нряшкйю бпелеммни рпюмятнплюжхх б бхденвхо
     MOVEQ #63,D2
     LEA RAM,A0
     LEA RAM+136,A1
@@ -1409,18 +1417,67 @@ FADETOPAL *б мювюкн RAM гюцпсфюеряъ оюкхрпю б йнрнпсч мсфмн бнгбеярхяэ бнгбпюр б
 	
 	JMP .COLJMP
    
-.DMA *оепеапняйю бпелеммни оюкхрпш
-    MOVE.W #$9300+(($0080>>1)&$FF),(VDPCONTROL)  ^мхфмее якнбн дкхммш $0xxx 1ff max
-    MOVE.W #$9400+((($0000>>1)&$FF00)>>8),(VDPCONTROL) юдпеяю дкхммш DMA бепумее якнбн дкхммш $xx00
+FULLPALITRADROP *оепеапняйю бпелеммни оюкхрпш
+
+    MOVE.L (A0)+,(A1)       *пюгб╗пмсрше жхйкш дкъ оепемняю оюкхрпш хг RAM б бхденвхо 
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)       
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)       
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)      
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+    MOVE.L (A0)+,(A1)
+
+
+   
+    RTS
+
+
+
+    *MOVE.W #$9300+(($0080>>1)&$FF),(VDPCONTROL)  ^мхфмее якнбн дкхммш $0xxx 1ff max
+    *MOVE.W #$9400+((($0000>>1)&$FF00)>>8),(VDPCONTROL) юдпеяю дкхммш DMA бепумее якнбн дкхммш $xx00
     
-   move.w #$9500+(($88>>1)&$FF),(VDPCONTROL) мхфмхи юдпея хярнвмхйю
-    move.w #$9600+((($0000>>1)&$FF00)>>8),(VDPCONTROL) япедмхи юдпея хярнвмхйю
-    move.w #$9700+((($FF0000>>1)&$7F0000)>>16),(VDPCONTROL) бшяьхи юдпея хярнвмхйю
+   *move.w #$9500+(($88>>1)&$FF),(VDPCONTROL) мхфмхи юдпея хярнвмхйю
+    *move.w #$9600+((($0000>>1)&$FF00)>>8),(VDPCONTROL) япедмхи юдпея хярнвмхйю
+    *move.w #$9700+((($FF0000>>1)&$7F0000)>>16),(VDPCONTROL) бшяьхи юдпея хярнвмхйю
 
 *    to CRAM:    
-
-    move.l #$C0000080+($00<<16),(VDPCONTROL)
-    RTS    
+    *jsr gemsdmastart
+    *move.l #$C0000080+($00<<16),(VDPCONTROL)
+    *jsr gemsdmaend
+    *JMP STOP
+   
         
 *.DMA2 *оепеапняйю нпхцхмюкэмни оюкхрпш
 *    MOVE.W #$9300+(($0080>>1)&$FF),(VDPCONTROL)  ^мхфмее якнбн дкхммш $0xxx 1ff max
@@ -1476,9 +1533,9 @@ MENU
     move.w #$9500+(($00>>1)&$FF),VDPCONTROL мхфмхи юдпея хярнвмхйю
     move.w #$9600+((($A000>>1)&$FF00)>>8),VDPCONTROL япедмхи юдпея хярнвмхйю
     move.w #$9700+((($FF0000>>1)&$7F0000)>>16),VDPCONTROL бепумхи юдпея хярнвмхйю
-    
+    jsr gemsdmastart
     move.l #$40000080+(($E000&$3FFF)<<16)+(($E000&$C000)>>14),VDPCONTROL юдпея мюгмювемхъ+гюосяй DMA
-    
+    jsr gemsdmaend
     MOVE.W #$8B03,VDPCONTROL
     
 
@@ -1806,13 +1863,15 @@ MENU
     move.w #$9500+(($00>>1)&$FF),VDPCONTROL мхфмхи юдпея хярнвмхйю
     move.w #$9600+((($A000>>1)&$FF00)>>8),VDPCONTROL япедмхи юдпея хярнвмхйю
     move.w #$9700+((($FF0000>>1)&$7F0000)>>16),VDPCONTROL бепумхи юдпея хярнвмхйю
-    
+    jsr gemsdmastart
     move.l #$40000080+(($DC00&$3FFF)<<16)+(($DC00&$C000)>>14),VDPCONTROL юдпея мюгмювемхъ+гюосяй DMA
-    
+    jsr gemsdmaend
     RTS
     
 .MENUCLEAR *оняке мюфюрхъ ярюпр мю 1 осмйре лемч (вхярхл лемч х оюпюкекэмн врн мхасдэ пюяоюйнбшбюел)
     *НРКЮДНВМЮЪ ОЮКХРПЮ
+    MOVE.L #100,(A7)    *ГЮРСУЮМХЕ ЛСГШЙХ
+    jsr gemsstartsong
     LEA .MENUCLEAR2,A6
     JMP GLOBALFADE
 
@@ -1836,7 +1895,8 @@ MENU
     MOVE.W #$9001,VDPCONTROL *бнгбпюыюел пюглеп хцпнбнцн онкъ мю 32 бепрхйюкэмне х 64 цнпхгнмрюкэмне
     MOVE.W #$8230,VDPCONTROL *бнгбпюыюел рюиклюо ю мю C000
     
-    JMP LEVEL0
+    
+    JMP LEVEL0              *опшцюел мю 1 спнбемэ
 
       
 
@@ -2841,7 +2901,7 @@ LEVEL0
     JSR LOADTORAMLEVEL0TILEMAP *пюяоюйнбшбюел рюиклюо б RAM
 	
 	BSR.W DMAWAIT
-
+    
    
 	MOVE.W #$8F02,(VDPCONTROL)
     BSR PREPVRAM    
@@ -2867,6 +2927,8 @@ LEVEL0
         
     JSR Nem_Decomp *пюяоюйнбйю опъл б бхденоюлърэ
 	
+    MOVE.L #1,(A7)
+    JSR gemsstartsong    *гЮОСЯЙЮЕЛ ЛЕКНДХЧ 1 СПНБМЪ
     
     *оюкхрпю + бшунд хг в╗пмнцн    
 
@@ -2878,7 +2940,7 @@ LEVEL0
     DBRA D7,.PL
 
    
-
+ 
     MOVEQ #0,D7 *нрвхярйю дкъ яв╗рвхйю йюдпнб
     LEA .LOOPJ,A6 
     JMP FADETOPAL
