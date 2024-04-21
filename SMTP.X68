@@ -66,12 +66,13 @@ HBLANKSTART
     RTS
     
 DMAWAIT
+    *ОЖИДАНИЕ ПОКА НЕ ЗАКОНЧИТСЯ DMA
     MOVE.W VDPCONTROL,D5
     AND.W #%0000000000000010,D5  
     BNE DMAWAIT
     move.w #$8F02,VDPCONTROL
     RTS
-PREPVRAM *ВЫЧИСЛЕНИЕ АДРЕСА ВИДЕОПАМЯТИ В D6 И ПЕРЕНОС ЕГО В УПРАВЛЯЮЩИЙ ПОРТ VDP
+PREPVRAM ;ВЫЧИСЛЕНИЕ АДРЕСА ВИДЕОПАМЯТИ В D6 И ПЕРЕНОС ЕГО В УПРАВЛЯЮЩИЙ ПОРТ VDP
     MOVEM.L D0-D7/A0-A7,-(A7)
     MOVE.L D6,D0
     AND.W #%1100000000000000,D0
@@ -147,19 +148,19 @@ RAM     equ $FF0000
 *=================================================================                        
     
     ORG	    $0200        
-    
-START 
-    
+     
+START  
 *    MOVE.L #VRAMTILES+15,D6
 *    JSR PREPVRAMREAD  отладочная функция для ремонта prevram
 *CHECK:    
 *   CMPI.W #$100, (Z80BUS) ПРОВЕРКА ШИНЫ
 *    BNE.S CHECK
 
-
     
-   * MOVE.W #$100,Z80BUS ЗАПРАШИВАЕМ ШИНУ Z80
-   * MOVE.W #$000,Z80RES УСТАНАВЛИВЕМ СБРОС Z80
+          
+
+;распаковка через z80 KOS
+;начальный файл по адресу FF8000
 
 
 
@@ -167,7 +168,7 @@ START
     
     
 *НАСТРАИВАЕМ VDP
-    MOVE.W #$8000,D2 КУСОК ДАННЫХ РЕГИСТРОВ 
+    MOVE.W #$8000,D2 КУСОК ДАННЫХ РЕГИСТРОВ
     MOVEQ #24,D1 ДЛИННА VDPSETUP            
     LEA VDPSETUP,A0 ЗАГРУЗКА АДРЕСА VDPSETUP
     MOVE.W (VDPCONTROL),D0 ЧИТАЕМ СОСТОЯНИЕ VDP
@@ -195,25 +196,29 @@ LOOP0
 *    JSR VBLANKEND ждём конец вертикальной синхронизации
 *    JMP LOOP 
 *===================================================================================
-    MOVE.W #$8F01,(VDPCONTROL) УСТАНАВЛИВАЕМ АВТО СЛОЖЕНИЕ В VDP НА 1, 16 БИТНОЕ СЛОВО
+    JSR VDPAUTOADD1 УСТАНАВЛИВАЕМ АВТО СЛОЖЕНИЕ В VDP НА 1, 16 БИТНОЕ СЛОВО
     *JSR CLEARTILEMAPA
     *JSR CLEARTILES
     *JSR CLEARTILEMAPB
     JSR MEMINIT
     
-    MOVE.W #$8F02,(VDPCONTROL) ЧИСТИМ ПАМЯТЬ НА ВСЯКИЙ СЛУЧАЙ =)
+    JSR VDPAUTOADD2 ЧИСТИМ ПАМЯТЬ НА ВСЯКИЙ СЛУЧАЙ =)
 
+    LEA gemsKOS,a0      
+    move.l #$FF0200,a1
+    BSR Kos_Decomp      ;РАСПАКОВЫВАЕМ ЗВУКОВОЙ ДРАЙВЕР
+    
 
     PEA sampbank
     PEA seqbank
     PEA envbank
-    PEA patchbank
+    PEA patchbank       ;УКАЗАТЕЛИ НА БАНКИ ДЛЯ GEMS
 
 
-    PEA RTBLOGO
+    PEA RTBLOGO         ;ПРЫЖОК ДАЛЬШЕ
 
-    JMP gemsinit
-
+    JMP gemsinit        ;ЗАГРУЖАЕМ ДРАЙВЕР
+   
 
     *bra RTBLOGO *ПРОГРАММА ЛОГОТИПА
     
@@ -223,8 +228,12 @@ LOOP0
 
 *==========================================================================================
 
-
-    
+WAITFRAMES 
+*D1=КОЛИЧЕСТВО КАДРОВ ОЖИДАНИЯ
+    BSR VBLANKSTART
+    BSR VBLANKEND
+    DBRA D1,WAITFRAMES
+    RTS    
     
 VDPSETUP
     DC.B $04 00  MODE REGISTER 1
@@ -277,13 +286,14 @@ PREPVRAMREAD *ВЫЧИСЛЕНИЕ АДРЕСА ВИДЕОПАМЯТИ В D6 ДЛЯ ЧТЕНИЯ
     MOVEM.L (A7)+,D0-D7/A0-A7
     RTS
 MEMINIT
+*ПОЛНАЯ ЗАЧИСТКА ПАМЯТИ
     LEA RAM,A0
     LEA VDPCONTROL,A1
     LEA VDPDATA,A2
     MOVE.W #$3FFB,D0
     CLR.L D1
 
-    move.w #$8F01,(A1)
+    JSR VDPAUTOADD1
     move.w #$93FF,(A1)
     move.w #$94FF,(A1)
     move.w #$9780,(A1)
@@ -454,9 +464,9 @@ Player_ReadOne:			;Read in and reformat a players buttons
 	rts
 
 *===========================================================================================================
-FONT INCBIN "tilemap\res\fonttilesnemesis.bin"
-MENUBGTILES INCBIN "tilemap\res\menubgtiles.bin" 
-MENUBGTILEMAP INCBIN "tilemap\res\menubgtilemap.bin"
+FONT INCBIN "tilemap\res\fonttilesnemesis.bin";оптимально nemesis
+MENUBGTILES INCBIN "tilemap\res\menubgtiles.bin" ;оптимально NEMESIS
+MENUBGTILEMAP INCBIN "tilemap\res\menubgtilemap.bin";оптимально enigma
 *===========================================================================================================
 
 
@@ -478,6 +488,7 @@ MENUBGTILEMAP INCBIN "tilemap\res\menubgtilemap.bin"
 
 
 Nem_Decomp:
+; a0 = art address
 		movem.l	d0-a1/a3-a5,-(sp)
 		lea	Nem_PCD_WriteRowToVDP,a3
 		lea	VDPDATA,a4	; write all rows to the VDP data port
@@ -495,6 +506,8 @@ Nem_Decomp:
 
 
 Nem_Decomp_To_RAM:
+; a0 = art address
+; a4 = destination RAM address Присутствует ненайденый баг :\
 		movem.l	d0-a1/a3-a5,-(sp)
 		lea	Nem_PCD_WriteRowToRAM,a3
 ; End of function Nem_Decomp_To_RAM
@@ -507,7 +520,7 @@ Nem_Decomp_To_RAM:
 
 
 Nem_Decomp_Main:
-		lea	$FFA000,a1 *nemcodetable АДРЕС КОДОВОЙ ТАБЛИЦЫ В RAM
+		lea	$FFF000,a1 *nemcodetable АДРЕС КОДОВОЙ ТАБЛИЦЫ В RAM
 		move.w	(a0)+,d2	; get number of patterns
 		lsl.w	#1,d2
 		bcc.s	PLUS	 *branch if the sign bit isn't set
@@ -955,7 +968,7 @@ EniDec_ChkGetNextByte:
 ; =============== S U B R O U T I N E =======================================
 
 
-Kos_Decomp:
+Kos_Decomp:     ;a0 = compressed data location a1 = destination
 		subq.l	#2,sp	; make space for two bytes on the stack
 		move.b	(a0)+,1(sp)
 		move.b	(a0)+,(sp)
@@ -1046,6 +1059,12 @@ Kos_Decomp_Done:
 		rts
 ; End of function Kos_Decomp
 
+VDPON
+    MOVE.W #$815C,(VDPCONTROL)
+    RTS
+VDPOFF
+    MOVE.W #$811C,(VDPCONTROL)
+    RTS    
 
 *-----------------------------------------------------------
 * Title      :LOGO
@@ -1090,7 +1109,7 @@ RTBLOGO
 MENUSKIP            *Для пропуска меню для Дебага
     *JMP LEVEL0 
    
-    
+    JSR VDPOFF
     LEA RAM,A0
     
     MOVE.W #$0000,(A0)+
@@ -1103,6 +1122,7 @@ MENUSKIP            *Для пропуска меню для Дебага
     MOVEQ #32,D6    УКАЗЫВАЕМ АДРЕС В ВИДЕОПАМЯТИ КУДА СКЛАДЫВАТЬ
     
     JSR PREPVRAM
+    
     JSR Nem_Decomp РАСПАКОВЫВАЕМ ТАЙЛЫ
     
     MOVEQ #$1,D0 СДВИГ ПО ТАЙЛАМ
@@ -1132,7 +1152,7 @@ MENUSKIP            *Для пропуска меню для Дебага
     MOVEQ #11,D5 ПЕРЕМЕННАЯ ДЛЯ ВРАЩЕНИЯ
     MOVEQ #100,D6
 
-       
+    JSR VDPON   
     LEA .PRELOOP,A6
     
     JMP FADETOPAL
@@ -1309,7 +1329,8 @@ GLOBALFADE *ГЛОБАЛЬНОЕ ЗАТУХАНИЕ ПАЛИТРЫ И ВОЗВРАТ ПО АДРЕСУ (A6)
     jsr gemsdmastart
     move.l #$C0000080+($00<<16),(VDPCONTROL)
     jsr gemsdmaend
-    RTS    
+    RTS
+
     
 *=================================================================================================================    
 FADETOPAL *В НАЧАЛО RAM ЗАГРУЖАЕТСЯ ПАЛИТРА В КОТОРУЮ НУЖНО ВОЗВЕСТИСЬ ВОЗВРАТ В А6 ЗАГРУЗКА ПАЛИТРЫ В НАЧАЛО RAM
@@ -1375,7 +1396,7 @@ FADETOPAL *В НАЧАЛО RAM ЗАГРУЖАЕТСЯ ПАЛИТРА В КОТОРУЮ НУЖНО ВОЗВЕСТИСЬ ВОЗВРАТ В
     
     JSR VBLANKSTART
     
-    JSR FULLPALITRADROP			*ОТСЫЛКА ВРЕМЕННОЙ ТРАНСФОРМАЦИИ В ВИДЕОЧИП
+    BSR.b FULLPALITRADROP 			*ОТСЫЛКА ВРЕМЕННОЙ ТРАНСФОРМАЦИИ В ВИДЕОЧИП
     MOVEQ #63,D2
     LEA RAM,A0
     LEA RAM+136,A1
@@ -1417,8 +1438,7 @@ FADETOPAL *В НАЧАЛО RAM ЗАГРУЖАЕТСЯ ПАЛИТРА В КОТОРУЮ НУЖНО ВОЗВЕСТИСЬ ВОЗВРАТ В
 	
 	JMP .COLJMP
    
-FULLPALITRADROP *ПЕРЕБРОСКА ВРЕМЕННОЙ ПАЛИТРЫ
-
+FULLPALITRADROP ;ПЕРЕБРОСКА ВРЕМЕННОЙ ПАЛИТРы a0 откуда a1 куда годится для переброски больших кусков данных в видеочип
     MOVE.L (A0)+,(A1)       *РАЗВЁРНУТЫЕ ЦИКЛЫ ДЛЯ ПЕРЕНОСА ПАЛИТРЫ ИЗ RAM В ВИДЕОЧИП 
     MOVE.L (A0)+,(A1)
     MOVE.L (A0)+,(A1)
@@ -1879,7 +1899,7 @@ MENU
     
     
 .MENUCLEAR2
-    MOVE.W #$8F01,(VDPCONTROL) АВТОСЛОЖЕНИЕ НА 1
+    JSR VDPAUTOADD1 АВТОСЛОЖЕНИЕ НА 1
     MOVE.W #$9300+(($005F>>1)&$FF),(VDPCONTROL)  ^НИЖНЕЕ СЛОВО ДЛИННЫ $0xxx 1ff max
     MOVE.W #$9400+((($3400>>1)&$FF00)>>8),(VDPCONTROL) АДРЕСА ДЛИННЫ DMA ВЕРХНЕЕ СЛОВО ДЛИННЫ $xx00
     
@@ -1891,7 +1911,7 @@ MENU
     
     
     
-    MOVE.W #$8F02,VDPCONTROL *ВОЗВРАЩАЕМ АВТОСЛОЖЕНИЕ НА 2
+    JSR VDPAUTOADD2 *ВОЗВРАЩАЕМ АВТОСЛОЖЕНИЕ НА 2
     MOVE.W #$9001,VDPCONTROL *ВОЗВРАЩАЕМ РАЗМЕР ИГРОВОГО ПОЛЯ НА 32 ВЕРТИКАЛЬНОЕ И 64 ГОРИЗОНТАЛЬНОЕ
     MOVE.W #$8230,VDPCONTROL *ВОЗВРАЩАЕМ ТАЙЛМАП А НА C000
     
@@ -2351,6 +2371,7 @@ MIKU						*ОБРАБОТКА СПРАЙТА РЕМУ
 .SPRITEDRAW *ПЕРЕД ЭТИМ ЗАНЕСТИ АДРЕС СПРАЙТА В А0
     MOVE.L #$FFA000,A1  *ЗАГРУЗКА АДРЕСА ВРЕМЕННОЙ РАСПАКОВКИ В RAM   
     MOVE.L A1,A2        *КОПИРОВАНИЕ АДРЕСА ПАМЯТИ
+  
     
     JSR Kos_Decomp      *РАСПАКОВКА СПРАЙТА В RAM
     MOVE.L #$70000002,(A3) *ЗАГРУЗКА АДРЕСА СПРАЙТА В КОНТРОЛЬНЫЙ РЕГИСТР ВИДЕОЧИПА
@@ -2359,6 +2380,7 @@ MIKU						*ОБРАБОТКА СПРАЙТА РЕМУ
     
     CMP.L A2,A1
     BNE .L
+ 
     
     
 .RETURN   
@@ -2388,16 +2410,43 @@ MIKUTILE15 INCBIN "tilemap\res\mikutiles15.bin" *Второй кадр взмаха
 MIKUTILE16 INCBIN "tilemap\res\mikutiles16.bin" *Третий кадр взмаха
 MIKUTILE17 INCBIN "tilemap\res\mikutiles17.bin" *Последний кадр взмаха
 
-BALLSP INCBIN	"tilemap\res\BALLSP.bin" 	*СПРАЙТ ШАРОВ   
+BALLSP INCBIN	"tilemap\res\BALLSP.bin" 	*СПРАЙТ ШАРОВ  ;оптимально nemesis
+
+VDPDATAFASTDROP ;переброс данных в видеочип из ram d0 количество циклов a0 источкник vdpdata уже выбран 
+    lea VDPDATA,a1
+    MOVEM.L D0-D7,-(A7)
+.lp    
+    move.l d0,-(a7)
+    movem.l (a0)+,d0-d7
+    move.l d0,(a1)
+    move.l d1,(a1)
+    move.l d2,(a1)
+    move.l d3,(a1)
+    move.l d4,(a1)
+    move.l d5,(a1)
+    move.l d6,(a1)
+    move.l d7,(a1)
+    move.l (a7)+,d0
+    dbra d0,.lp
+    MOVEM.L (A7)+,D0-D7
+    rts
+wait68k ;ожидание процессора 68k d0 время ожидания
+    move.l #$FFFFFFFF,d1
+.lp   
+    dbra d1,.lp
+    dbra d0,wait68k
+    rts    
+    
 
 MIKUSETUP   
 
 	MOVE.L #VDPCONTROL,A4
 	MOVE.L #VDPDATA,A3
 	MOVE.L #RAM+66,A0	
-    MOVE.L #$0EEE0888,(A0)+  (ПАЛИТРА MIKU)
+    MOVE.L #$0EEE0888,(A0)+  ;(ПАЛИТРА MIKU+ШАР+ENEMYTILES)
     MOVE.L #$000E0008,(A0)+
-    MOVE.L #$0CAA08EE,(A0)  ***
+    MOVE.L #$0CAA08EE,(A0)+
+    MOVE.L #$080800EE,(A0)  ***
 
     MOVE.L #$58000003,(A4) *УСТАНАВЛИВАЕМ АДРЕС РЕЙМУ В СПРАЙТОВОЙ ТАБЛИЦЕ ВИДЕОЧИПА
     
@@ -2424,35 +2473,38 @@ BALLINIT	*СУБРУТИНА ДЛЯ ЗАГРУЗКИ ШАРОВ				ДАТА 29.08.2022
 
     MOVE.W #$00D0,(A5)+     *АДРЕСА ДЛЯ ПОЛОЖЕНИЯ ШАРА Y  D0
     MOVE.W #$0502,(A5)+       *ЛИНК И РАЗМЕР СПРАЙТА
-    MOVE.W #$C590,(A5)+      *АДРЕС ДЛЯ РАЗВОРОТА СПРАЙТА 4
+    MOVE.W #$4590,(A5)+      *АДРЕС ДЛЯ РАЗВОРОТА СПРАЙТА 4
     MOVE.W #$0180,(A5)     *АДРЕСА ДЛЯ ПОЛОЖЕНИЯ ШАРА X  180 (1B0 ПРАВЫЙ КРАЙ) (80левый край)
     
 	SUBQ #6,A5
 
 	MOVE.L (A5)+,(A3)
 	MOVE.L (A5),(A3) *НАЧАЛЬНЫЕ ПАРАМЕТРЫ ШАРА
-	
+
 	LEA BALLSP,A0		*ЗАДВИГАЕМ АДРЕС ТАЙЛОВ
-	MOVE.L #$70000003,(A4)	*ЗАДВИГАЕМ АДРЕС ОКНА VDP ЧТОБ ТАМ ХРАНИТЬ РАСПАКОВАННЫЕ ТАЙЛЫ ШАРОВ
-	BSR.W Nem_Decomp		*РАСПАКОВКА 
+	*MOVE.L #$70000003,(A4)	*ЗАДВИГАЕМ АДРЕС ОКНА VDP ЧТОБ ТАМ ХРАНИТЬ РАСПАКОВАННЫЕ ТАЙЛЫ ШАРОВ
+    
+    MOVE.L #$72000002,(A4) *Адреса для распаковки шаров
+	BSR.W Nem_Decomp		*РАСПАКОВКА
+
  	
-	MOVE.W #$8F01,(A4)	*АВТОСЛОЖЕНИЕ       *DMA для начального заполнения спрайтовой таблицы шара
-	MOVE.W #$9380,(A4)	*ДЛИННА
-	MOVE.W #$9400,(A4)
+	*JSR VDPAUTOADD1	*АВТОСЛОЖЕНИЕ       *DMA для начального заполнения спрайтовой таблицы шара
+	*MOVE.W #$9380,(A4)	*ДЛИННА
+	*MOVE.W #$9400,(A4)
 	
-	MOVE.W #$9500,(A4)	*АДРЕС ИСТОЧНИКА
-	MOVE.W #$96F0,(A4)
-	MOVE.W #$97C0,(A4)	*ТИП ОПЕРАЦИИ
+	*MOVE.W #$9500,(A4)	*АДРЕС ИСТОЧНИКА
+	*MOVE.W #$96F0,(A4)
+	*MOVE.W #$97C0,(A4)	*ТИП ОПЕРАЦИИ
     CLR.W $FF9FEC   *отчистка для ГРАВИТАЦИИ ШАРА
     CLR.W $FF9FEA   *отчистка ускорения свободного падения и подъёма
     CLR.W $FF9FE8   *ОТЧИСТКА ШАРА ПО ГОРИЗОНТАЛИ
     *CLR.B $
 	
-	MOVE.L #$720000C2,(A4)	*АДРЕС ВЫХОДНОЙ+СТАРТ
+	*MOVE.L #$720000C2,(A4)	*АДРЕС ВЫХОДНОЙ+СТАРТ
 	
 	
 	
-	MOVE.B #$F0,$FF9FE8 *НАЧАЛЬНЫЙ ЗАПУСК ШАРА ДЛЯ ДЕБАГА
+	MOVE.B #$F0,$FF9FE8 *НАЧАЛЬНЫЙ ЗАПУСК ШАРА ДЛЯ ДЕБАГА debug
 	*JMP STOP
 	RTS
 BALLMATH            *ОБРАБОТКА ДВИЖЕНИЯ ШАРА 
@@ -2785,87 +2837,51 @@ BALLMATH            *ОБРАБОТКА ДВИЖЕНИЯ ШАРА
 .ballrotatenext
     CLR.B (A3)      *ОТЧИСТКА СЧЁТЧИКА МЯЧА 
 
-    MOVE.L #$FF9FE1,A0      *СЧЁТЧИК ПОЛОЖЕНИЙ 8 БИТ
-    MOVE.L #$FF9FE2,A1      *АДРЕС МЛАДШИЙ ДЛЯ DMA 16 БИТ
+    *MOVE.L #$FF9FE1,A0      *фЛАГ РАЗВОРОТА МЯЧА BYTE
+    MOVE.L #$FF9FF3,A1      *АДРЕС НАЧАЛА СПРАЙТА ДЛЯ ШАРА BYTE
     *MOVE.L #$FF9FE4,A2      *АДРЕС СТАРШИЙ ДЛЯ DMA 16 БИТ
     
 
-    MOVE.B (A0),D0          *ЗАГРУЖАЕМ СЧЁТЧИК ПОЛОЖЕНИЙ МЯЧА
+    *MOVE.B (A0),D0          *ЗАГРУЖАЕМ СЧЁТЧИК ПОЛОЖЕНИЙ МЯЧА
     BTST #0,(A5)            *СРАВНИВАЕМ НАПРАВЛЕНИЕ ДВИЖЕНИЯ
     BNE .1                  *ДОБАВЛЯЕМ СЧЁТЧИК
-    BEQ .0                 *УМЕНЬШАЕМ СЧЁТЧИК
-.1
-    ADD.B #$20,D0      *ДОБАВЛЯЕМ К СЧЁТЧИКУ
-    
+    BEQ .0                 *УМЕНЬШАЕМ СЧЁТЧИК           ПОЛОЖЕНИЯ СПРАЙТА 1/90  2/94  3/98  4/9C
+.1  
+ 
+    ADD.B #$4,(A1)      *ДОБАВЛЯЕМ К АДРЕСУ НАЧАЛА СПРАЙТА   
     BRA .2              *ПРЫЖОК ДАЛЬШЕ
 .0
-    SUB.B #$20,D0      *ВЫЧИТАЕМ ИЗ СЧЁТЧИКА
-    
+    SUB.B #$4,(A1)      *ВЫЧИТАЕМ ИЗ АДРЕСА НАЧАЛА СПРАЙТА
+
 .2
     MOVE.L #$FF9FF2,A2  *АДРЕС ДЛЯ РАЗВОРОТА МЯЧА В RAM тАБЛИЦЕ 
-    BSET.B #0,$FF9FDF   *УСТАНАВЛИВАЕМ ФЛАГ ДЛЯ DMA
-    MOVE.B D0,(A0)  *ЗАДВИГАЕМ СЧЁТЧИК ОБРАТНО В ПАМЯТЬ ОБРАЗЕЦ СЧЁТЧИКА 00-20-40-60-80-A0-C0-E0 *FF9FDF ФЛАГ ДЛЯ DMA ШАРА
-    BEQ .ballrotatezero     *ПРОВЕРКА (ЕСЛИ ПОЛОЖЕНИЕ 0 ПЕРЕХОДИМ В СПЕЦ МЕСТО)
+    *BSET.B #0,$FF9FDF   *УСТАНАВЛИВАЕМ ФЛАГ ДЛЯ DMA
+  
+    CMP.B #$A0,(A1)    *СРАВНИВАЕМ НЕ ПЕРЕКРУТИЛСЯ ЛИ ШАР
+    BEQ .ballsetrot    *если перекрутился идём отражать
 
-    BCLR #11,(A2)    *смена флага разворота мяча по горизонтали
-    BCLR #12,(A2)    *смена флага разворота мяча по горизонтали
-    CLR.L D3            *ОТЧИЩАЕМ D3 ЧТО БЫ ВСЕ ВЫЧИСЛЕНИЯ БЫЛИ ТОЧНЫМИ С 20
-    MOVEQ #1,D4         *ДЛЯ ЦИКЛОТРОНА 
-    
-
-    CMP.B #$80,D0           *ЕСЛИ ШАР ПРОКРУТИЛСЯ МЕНЬШЕ ЧЕМ НА ПОЛОВИНУ 
-    BLS .ballrotatenextloop    *ПРЫГАЕМ ДАЛЬШЕ
-    
-    BSET #11,(A2)        *ИСКУСТВЕННО ОТРАЖАЕМ ШАР ПО ГОРИЗОНТАЛИ И ВЕРТИКАЛИ
-    BSET #12,(A2) 
-
-
-.ballrotatenextloop
-    MOVE.W #$9500,D1    *ЕСЛИ НЕ РАВЕН УСТАНАВЛИВАЕМ ЗНАЧЕНИЯ ДЛЯ ДМА
-    MOVE.W #$96F0,D2 
-    ADD.W #$20,D3       *ДОБАВЛЯЕМ ДЛЯ СЛЕДУЮЩЕГО КАДРА СРАВНЕНИЯ
-
-    CMP.B D3,D0         *СРАВНИВАЕМ СЧЁТЧИК МЯЧА
-    BEQ .ballrotateend  *ЕСЛИ РАВЕН ЗАКАНЧИВАЕМ СРАВНЕНИЕ
-    ADD.W #$80,D1
-    ADD.W #$20,D3
-
-    CMP.B D3,D0
-    BEQ .ballrotateend
-    SUB.W #$80,D1
-    ADD.W #$1,D2
-    ADD.W #$20,D3
-
-    CMP.B D3,D0
-    BEQ .ballrotateend
-    ADD.W #$80,D1
-    ADD.W #$20,D3
-                            *НАДО ПЕРЕДЕЛАТЬ АЛГОРИТМ ВЫБОРА КАДРА И ДОБАВИТЬ РАЗВОРОТ
-    CMP.B D3,D0
-    BEQ .ballrotateend
-    
-    
-    DBRA D4,.ballrotatenextloop     *ДЕЛАЕМ 2 ПРОХОДА
-    *CMP.B #4,D7
-    *BEQ STOP 
-.ballrotateend
-    MOVEM.W D1-D2,(A1)        *ЗАДВИГАЕМ ПРОМЕЖУТОЧНЫЕ ВЫЧИСЛЕНИЯ В ПАМЯТЬ ДЛЯ ДМА (ДАННЫЕ КОТОРЫЕ МОГУТ И НЕ ПОНАДОБИТЬСЯ)
+    CMP.B #$8C,(A1)    *ЕСЛИ ШАР ОТКРУТИЛСЯ СИЛЬНО ВНИЗ 
+    BEQ .ballclearrot  *идём отражать обратно  
     RTS
-.ballrotatezero         *СПЕЦИАЛЬНОЕ ВЕТВЛЕНИЕ ДЛЯ ПОЛОЖЕНИЯ ШАРА 0
-    MOVE.W #$9580,D1        *ЗАДВИГАЕМ ПОСЛЕДНЕЕ ПОЛОЖЕНИЕ
-    MOVE.W #$96F1,D2
 
-    BSET #11,(A2)        *ЗЕРКАЛИМ ШАР
-    BSET #12,(A2)
+.ballclearrot
+    move.b #$9C,(a1)
+    BCHG #11,(A2)        *ИСКУСТВЕННО ОТРАЖАЕМ ШАР ПО ГОРИЗОНТАЛИ И ВЕРТИКАЛИ
+    BCHG #12,(A2) 
 
-    BRA .ballrotateend      *ПЕРЕДАЁМ РЕЗУЛЬТАТ
+    rts
+
+.ballsetrot
+    move.b #$90,(a1)    
+    BCHG #11,(A2)    *смена флага разворота мяча по горизонтали
+    BCHG #12,(A2)    *смена флага разворота мяча по горизонтали
+    rts
 
 
 
 BALLDRAW
-    MOVE.L #VDPCONTROL,A4
-    MOVE.L #$58080003,(A4)      *ЗАПРОС ВИДЕОЧИП НА ЗАПИСЬ ШАРА
-    MOVE.L #$FF9FDF,A0
+    MOVE.L #$58080003,(VDPCONTROL)      *ЗАПРОС ВИДЕОЧИП НА ЗАПИСЬ ШАРА
+    *MOVE.L #$FF9FDF,A0
        
 
     MOVE.L #VDPDATA,A2
@@ -2878,58 +2894,50 @@ BALLDRAW
     *jmp stop
     
      
-    BTST #0,(A0)         *ПРОВЕРКА ФЛАГА ДМА И ПРЫЖОК
-    BEQ .RT    
+    *BTST #0,(A0)         *ПРОВЕРКА ФЛАГА ДМА И ПРЫЖОК
+   * BEQ .RT    
     
-    move.w #$8F01,(A4)  *АВТОСЛОЖЕНИЕ 1
-    move.w #$937E,(A4)
-    move.w #$9400,(A4)  *ДЛИННА
-    move.w $FF9FE2,(A4)              *ПОЗИЦИЯ МЯЧА ЧЕРЕЗ КАЖДЫЕ 9580
-    move.w $FF9FE4,(A4)
-    move.w #$97C0,(A4)  *ИСТОЧНИК
-    move.l #$720000C2,(A4) *ВЫХОД
-    MOVE.B #0,(A0)       *ОТЧИСТКА ФЛАГА ДМА 
+   * move.w #$8F01,(A4)  *АВТОСЛОЖЕНИЕ 1
+   * move.w #$937E,(A4)
+   * move.w #$9400,(A4)  *ДЛИННА
+   * move.w $FF9FE2,(A4)              *ПОЗИЦИЯ МЯЧА ЧЕРЕЗ КАЖДЫЕ 9580
+   * move.w $FF9FE4,(A4)
+   * move.w #$97C0,(A4)  *ИСТОЧНИК
+   * move.l #$720000C2,(A4) *ВЫХОД
+   *MOVE.B #0,(A0)       *ОТЧИСТКА ФЛАГА ДМА 
 .RT    *jmp stop
     RTS
 *LEVEL0==========================================================================================
 LEVEL0
-    
+    JSR VDPOFF
+    JSR ramclear  
     *ЦИКЛОТРОН ДЛЯ ПЕРЕНОСА ТАЙЛМАПА (ЗАГОТОВЛЕННОГО ВО ВРЕМЯ DMA)
-    BSR.W MIKUSETUP	*УСТАНОВКИ СПРАЙТА РЕМУ
+    BSR.W MIKUSETUP	*УСТАНОВКИ СПРАЙТА РЕМУ +ЗАГРУЗКА ШАРА
 	*BSR.B BALLINIT	*ЗАГРУЗЧИК ШАРА   ЖЕЛАТЕЛЬНО ДЕРЖАТЬ ПАРОЙ (ЭКОНОМИЯ РЕСУРСОВ)
-    MOVE.L #VRAMTILEMAPB,D6
+    JSR ENEMYTILESINIT  ;ИНИЦИАЛИЗАЦИЯ ВРАЖЕСКИХ ПЛИТОК
+    *
     JSR LOADTORAMLEVEL0TILEMAP *РАСПАКОВЫВАЕМ ТАЙЛМАП В RAM
-	
-	BSR.W DMAWAIT
-    
-   
-	MOVE.W #$8F02,(VDPCONTROL)
-    BSR PREPVRAM    
+
+	MOVE.L #VRAMTILEMAPB,D6
     MOVE.L #$FFA000,A2 *АДРЕС ТАЙЛМАПА В RAM
-    MOVE.L #VDPDATA,A3 *АДРЕС ПОРТА ВИДЕОЧИПА
-    MOVEQ #19,D0 *ЦИКЛОТРОН СТРОЧНЫЙ
-    MOVEQ #29,D1 *ЦИКЛОТРОН КАДРОВЫЙ
-.L  
-    MOVE.L (A2)+,(A3) *ТОЛКАЕМ 2 ТАЙЛА
-    DBRA D0,.L      *ЦИКЛИМСЯ ПОКА НЕ ВЫДАДИМ ВСЮ СТРОКУ
-    ADD.W #128,D6   *ДОБАВЛЯЕМ АДРЕС ДО СЛЕД СТРОКИ
-    BSR.W PREPVRAM    *ГОТОВИМ ВИДЕОПАМЯТЬ
-    
-    MOVEQ #19,D0    *ДОБАВЛЯЕМ СТРОЧНЫХ ЦИКЛОВ
-    
-    DBRA D1,.L      *ЦИКЛИМСЯ ПОКА НЕ ВЫВЕДЕМ ВСЕ СТРОКИ
-    
+    BSR LOADTILEMAPTOVRAM
+
     
     *ЗАГРУЗКА ТАЙЛОВ
     LEA LEVEL0BTILES,A0 *АДРЕС ТАЙЛОВ
+
+
+    move.l #$ff0200,a1  ;адрес таи?лов в рам куда выкладывать
+
+
+    JSR Kos_Decomp *РАСПАКОВКА ПРЯМ В ram
     MOVE.L #32,D6 *ОТСТУП 1 ТАЙЛ
     JSR PREPVRAM    *ГОТОВИМ ВИДЕОПАМЯТЬ
+    move.l #$ff0200,a0  ;адрес таи?лов в рам куда выкладывать
+    move.l #770,d0      ;длина таи?лов
         
-    JSR Nem_Decomp *РАСПАКОВКА ПРЯМ В ВИДЕОПАМЯТЬ
-	
-    MOVE.L #1,(A7)
-    JSR gemsstartsong    *Запускаем мелодию 1 уровня
-    
+    BSR VDPDATAFASTDROP ;переброс данных в видеочип d0 количество циклов a0 источкник a1 видеочип
+
     *ПАЛИТРА + ВЫХОД ИЗ ЧЁРНОГО    
 
     MOVE.L #RAM+96,A0 ПОЗИЦИЯ В RAM ДЛЯ ЦВЕТА
@@ -2938,16 +2946,31 @@ LEVEL0
 .PL
     MOVE.L (A1)+,(A0)+ ЗАГРУЗКА ПАЛИТРЫ
     DBRA D7,.PL
+    
 
-   
- 
+
+    LEA RAM,A0  *Переброска палитры в видеочип
+    MOVEQ #3,D0
+    MOVE.L #$C0000000,(VDPCONTROL)
+    BSR VDPDATAFASTDROP *ПЕРЕБРОСИТЬ ПАЛИТРУ В ВИДЕОЧИП
+    
+    moveq #6,d0 ;сколько циклов ожидания    
+    bsr wait68k ;ожидание процессора 68k d0 время ожидания что мы музыка не самоисключилась
+    *MOVE.L #1,(A7)
+    *JSR gemsstartsong    *Запускаем мелодию 1 уровня
     MOVEQ #0,D7 *ОТЧИСТКА ДЛЯ СЧЁТЧИКА КАДРОВ
-    LEA .LOOPJ,A6 
-    JMP FADETOPAL
+    *LEA .LOOPJ,A6
+
+    MOVE.W #$0100,D4 *цифры для заставки формат 0X вторая цифра 0X первая цифра
+    BSR TITLECARDSEQ *запускаем заставку
+    MOVE.L #1,(A7)
+    JSR gemsstartsong    *Запускаем мелодию 1 уровня
+
+    *JMP FADETOPAL
     
     
 .GAMELOOP
-       
+    *JSR STOP   
     JSR MIKU    *ОБРАБОТКА РЕЙМУ
     JSR BALLMATH    *ОБСЧЁТ ШАРА
     
@@ -2967,7 +2990,184 @@ LEVEL0
     
          
        
-    JMP .GAMELOOP
+    BRA .GAMELOOP
+
+ENEMYTILESINIT           ;инициализация вражеских таи?лов
+    BSR VDPAUTOADD2      ;автосложение 2 
+    MOVE.L #$FF0200,A1   ;АДРЕС КУДА ВЫКЛАДЫВАТЬ ENEMYTILESKOS
+    LEA ENEMYTILESKOS,A0 ;АДРЕС ОТКУДА БРАТЬ ENEMYTILESKOS
+    MOVE.L A1,A2         ;КОПИРУЕМ АДРЕС В A2 ДЛЯ ПОТОМ
+    JSR Kos_Decomp       ;РАСПАКОВКА ПРЯМ В RAM
+
+    MOVE.L #$B400,D6     ;АДРЕС ВИДЕОПАМЯТИ КУДА ВЫКЛАДЫВАТЬ ENEMYTILESKOS
+    JSR PREPVRAM         ;ГОТОВИМ ВИДЕОПАМЯТЬ
+ 
+    MOVE.L A2,A0         ;ВОЗВРАЩАЕМ АДРЕС ОТКУДА БРАТЬ ENEMYTILESKOS
+    MOVEQ #20,D0         ;СКОЛЬКО ТАЙЛОВ БУДЕМ ЗАДВИГАТЬ
+
+    JSR VDPDATAFASTDROP  ;КОПИРУЕМ ИЗ RAM В VRAM + ТАМ ЖЕ ЦВЕТА ДЛЯ ЗАСТАВОЧНОЙ КАРТОЧКИ
+    
+    *JSR STOP
+    *MOVE.L #$C004,D6
+    *JSR PREPVRAM
+    *MOVE.W #$459C,(VDPDATA) ;тестовый кусочек
+
+    RTS                  ;ВЫПРЫГИВАЕМ НАЗАД
+*===============================================================================  
+LOADTILEMAPTOVRAM 
+*D6=АДРЕС ТАЙЛМАПА В VRAM A2=АДРЕС ТАЙЛМАПА В RAM
+	BSR VDPAUTOADD2 *ВОЗВРАЩАЕМ АВТОСЛОЖЕНИЕ НА 2
+    BSR PREPVRAM    
+    *A2 *АДРЕС ТАЙЛМАПА В RAM
+    MOVE.L #VDPDATA,A3 *АДРЕС ПОРТА ВИДЕОЧИПА
+    MOVEQ #19,D0 *ЦИКЛОТРОН СТРОЧНЫЙ
+    MOVEQ #29,D1 *ЦИКЛОТРОН КАДРОВЫЙ
+.L  
+    MOVE.L (A2)+,(A3) *ТОЛКАЕМ 2 ТАЙЛА
+    DBRA D0,.L      *ЦИКЛИМСЯ ПОКА НЕ ВЫДАДИМ ВСЮ СТРОКУ
+    ADD.W #128,D6   *ДОБАВЛЯЕМ АДРЕС ДО СЛЕД СТРОКИ
+    BSR.W PREPVRAM    *ГОТОВИМ ВИДЕОПАМЯТЬ
+    
+    MOVEQ #19,D0    *ДОБАВЛЯЕМ СТРОЧНЫХ ЦИКЛОВ
+    
+    DBRA D1,.L      *ЦИКЛИМСЯ ПОКА НЕ ВЫВЕДЕМ ВСЕ СТРОКИ
+
+    RTS
+
+*===============================================================================  
+VDPAUTOADD2
+    MOVE.W #$8F02,(VDPCONTROL)
+    RTS 
+*===============================================================================      
+VDPAUTOADD1
+    MOVE.W #$8F01,(VDPCONTROL)
+    RTS
+*===============================================================================     
+ramclear
+    LEA RAM,A0
+    MOVE.L #$3FFB,D0
+.L    
+    CLR.L (A0)+
+    DBRA D0,.L          *ЗАЧИСТКА RAM  
+    rts
+
+*===============================================================================
+TITLECARDSEQ
+*Включение видеочипа и вывод заставочной карточки/номер уровня D4 в формате 0X0X
+    move.w d4,-(SP)
+    move.w #$9180,(VDPCONTROL) *Выставляем VDP окно в видимое положение
+    MOVEQ #7,D5 *ОБЩЕЕ КОЛИЧЕСТВО КАРТОЧЕК + ОТ ЭТОГО РАБОТАЕТ ЦИКЛОТРОН
+.L
+    CMP.B #1,D5 *ПРОВЕРЯЕМ НЕ НА STAGE CИМВОЛЕ МЫ НАХОДИМСЯ 
+    BLE .next3  *ЕСЛИ ДА ТО НЕ ИГРАЕМ ЗВУК
+    movem.l d0-d7/a0-a6,-(a7)   *СПАСАЕМ ВСЕ РЕГИСТРЫ И ЗА ОДНО ОСВОБОЖДАЕМ МЕСТО В СТЕКЕ
+    MOVE.L #101,(A7)    *ИГРАЕМ ШЛЕПОК TITLECARDSEQSOUND
+    jsr gemsstartsong
+    movem.l (a7)+,d0-d7/a0-a6   *ВОЗВРАЩАЕМ ВСЁ НАЗАД
+
+.next3   
+    SUB.L A0,A0 *ОТЧИСТКА А0
+    LEA s1kos,a0
+    CMP.B #7,D5
+    BEQ .next
+    LEA s2kos,a0
+    CMP.W #6,D5
+    BEQ .next
+    LEA s3kos,a0
+    CMP #5,D5
+    BEQ .next
+    LEA s4kos,a0
+    CMP #4,D5
+    BEQ .next
+    LEA s5kos,a0
+    CMP #3,D5
+    BEQ .next
+    LEA s6kos,a0
+    CMP #2,D5
+    BEQ .next
+    LEA STAGEkos,a0
+    
+
+.next
+    MOVE.L D5,-(A7)     *СОХРАНЯЕМ D5 ИНАЧЕ ЕГО ПЕРЕЗАПИШУТ
+    MOVE.L #$FF0200,A1  *ТЕСТОВАЯ ЗАГРУЗКА КАРТОЧКИ
+    MOVE.L A1,A2        *ДЛЯ LOADTILEMAPTOVRAM
+    MOVE.L A1,A6        *ДЛЯ ПОТОМ КУДА ВЫКЛАДЫВАТЬ ЦИФРЫ В RAM
+    BSR Kos_Decomp *РАСПАКОВКА ПРЯМ В RAM
+    
+    MOVE.W #$F000,D6    *АДРЕС ОКНА
+    BSR VBLANKSTART     *ДОЖИДАЕМСЯ КОНЦА КАДРА
+    BSR LOADTILEMAPTOVRAM   *ЗАГРУЖАЕМ КАРТОЧКУ В ВИДЕОПАМЯТЬ
+    BSR VDPON       *влючаем VDP
+    
+    MOVE.L (A7)+,D5 *ВОССТАНОВЛЯЕМ D5
+    MOVEQ #8,D1 *КОЛИЧЕСТВО ОЖИДАНИЯ ДЛЯ WAITFRAMES
+    BSR WAITFRAMES  *ЖДЁМ
+    
+    DBRA D5,.L *ЦИКЛИМСЯ ПОКА НЕ ВЫВЕДЕМ ВСЕ КАРТОЧКИ
+    *чистим надпись stage
+    BSR .dmasub
+
+    
+    LEA Numberskos,a0   *ВЫСТАВЛЯЕМ ИСТОЧНИК ЦИФР
+    MOVE.L A6,A1        *ВОЗВРАЩАЕМ МЕСТО КУДА БУДЕМ ВЫГРУЖАТЬ ЦИФРЫ
+    BSR Kos_Decomp      *РАСПАКОВЫВАЕМ ЦИФРЫ В RAM АПРЕЛЬ 5/2024
+
+    BSR VDPAUTOADD2     *возвращаем autoadd на 2 после DMA
+    move.w (SP)+,d4     *возращаем значение числа которое будем рисовать (утечек нету 6 апреля 2024)
+    MOVEQ #1,D0         *для общего цикла определения цифры
+.L5
+    MOVEQ #0,D3         *обнуляем проверялку считалку
+    MOVE.L #$FF0200,A0  *начальный адрес цифр в ram
+.L4
+    CMP.B D3,D4         *сравниваем с первой считалкой
+    BEQ .next2          *если равно переходим дальше
+    ADDQ #1,D3          *если не равно увеличиваем считалку
+    ADD.L #$90,A0       *если не равно увеличиваем адрес до следующей цифры
+    BRA .L4             *продолжаем цикл считалки
+.next2                  *переход если цифра совпадает
+    TST D0              *тестируем первый ли это цикл
+    BEQ .SKIP           *если это не первый, то пропускаем
+    MOVE.L A0,A6        *заводим первый адрес цифры в A6
+    LSR #8,D4           *сдвигаем цифровой регистр чтоб добраться до 2й цифры
+.SKIP                   *если цикл первый 
+    MOVE.L A0,A5        *завдим второй адрес цифры в A5
+    DBRA D0,.L5         *циклотроним пока не выдолбим адреса 2х цифр
+    BSR VBLANKSTART
+    MOVE.W #$F59A,D6    *НАЧАЛЬНЫЙ АДРЕС VRAM ОТКУДА РИСОВАТЬ ЦИФРЫ
+    MOVEQ #1,D1         *для второго цикла
+.L3    
+    MOVEQ #10,D0        *для вывода 1 цифры
+.L2    
+    BSR PREPVRAM        *готовим адрес откуда будем рисовать
+    MOVE.L (A6)+,(A3)   *ДЛЯ ВЫВОДА 1 СТРОКИ ЦИФР
+    MOVE.L (A6)+,(A3)
+    MOVE.L (A6)+,(A3)
+    ADD.W #128,D6       *добавляем до следующей строки
+    DBRA D0,.L2         *выводим все строки цифры
+    MOVE.W #$F5A8,D6    *адрес следующей цифры в vram
+    MOVE.L A5,A6        *заносим вторую цифру
+    DBRA D1,.L3
+
+    MOVEQ #30,D1
+    BSR WAITFRAMES      *ЖДЁМ КАДРЫ ДЛЯ ЦИФЕР
+    BSR .dmasub         *чистим число
+
+    BSR DMAWAIT         *ждем пока dma завершится 
+    RTS
+.dmasub *отчищает stage и цифры 
+    move.w #$8F01,(A4)
+    move.w #$9348,(A4)
+    move.w #$9405,(A4)
+    move.w #$9780,(A4)
+    move.l #$75840083,(A4)
+    move.w #$0000,(A3) *ЗАЧИСТКА ВИДЕОПАМЯТИ в районе stage dma fill dma успевает раньше распаковки
+    RTS
+*==============================================================================
+
+
+    
+
 *DMASPRITETABLE
         *DMA ДЛЯ ПЕРЕНОСА СПРАЙТОВОЙ ТАБЛИЦЫ В ВИДЕОПАМЯТЬ 
 *    MOVE.L #VDPCONTROL,A0 *ПЕРЕНОС КОНТРОЛЯ В AO ДЛЯ КОМПАКТНОСТИ КОДА :)
@@ -2983,35 +3183,51 @@ LEVEL0
     
     
 *    RTS
+       
 
-LEVEL0BTILES INCBIN "tilemap\res\level0btiles.bin"
-LEVEL0BTILEMAP INCBIN "tilemap\res\level0btilemap.bin"
-LEVEL0BPALITRA INCBIN "tilemap\res\level0bpalitra.bin"
+LEVEL0BTILES INCBIN "tilemap\res\level0tilesKOS.bin"    ;оптимально KOS             ;"tilemap\res\level0btiles.bin"
+LEVEL0BTILEMAP INCBIN "tilemap\res\level0btilemap.bin"  ;оптимально enigma
+LEVEL0BPALITRA INCBIN "tilemap\res\level0bpalitra.bin"  ;не сжато
     
-MENUWINDOWTILES INCBIN "tilemap\res\menuwindowtile.bin"
-MENUWINDOWTILEMAP INCBIN "tilemap\res\menuwindowtilemap.bin"
-MENUTEXT INCBIN "tilemap\res\menutext.bin"
-
+MENUWINDOWTILES INCBIN "tilemap\res\menuwindowtile.bin" ;оптимально nemesis
+MENUWINDOWTILEMAP INCBIN "tilemap\res\menuwindowtilemap.bin" ;оптимально enigma   
+MENUTEXT INCBIN "tilemap\res\menutext.bin"  ;не сжато?
+        
+ENEMYTILESKOS INCBIN "tilemap\res\enemytiles\enemytilesTilesKOS" ;оптимально KOS 
+    align 2
+;EMENYTILESDATA DC.L #$
 
 *===================================================================================================================
     
 RTBLOGOTILES
-    INCBIN "tilemap\res\RTBLOGOTILES.BIN"
+    INCBIN "tilemap\res\RTBLOGOTILES.BIN"   ;оптимально nemesis
 
      
 *==============================================================================================================
- 
-    INCLUDE "MONITOR.X68" *ПРОГРАММА МОНИТОРА ДЛЯ ОТЛАДКИ   
-    INCLUDE "SMTP\GEMS.A" *Звуковой драйвер+запчасти  
-  
-
-   
     
+    INCLUDE "MONITOR.X68" *ПРОГРАММА МОНИТОРА ДЛЯ ОТЛАДКИ   
+    INCLUDE "SMTP\GEMS.A" *Звуковой драйвер+запчасти
+gemskos    INCBIN "gemsKOS.bin"  *сжатый звуковой драйвер
+*===============================================================================================================
+*сжатая заставочная карточка+цифры
+s1kos      INCBIN "tilemap\res\enemytiles\s1kos"
+s2kos      INCBIN "tilemap\res\enemytiles\s2kos"
+s3kos      INCBIN "tilemap\res\enemytiles\s3kos"
+s4kos      INCBIN "tilemap\res\enemytiles\s4kos"
+s5kos      INCBIN "tilemap\res\enemytiles\s5kos"
+s6kos      INCBIN "tilemap\res\enemytiles\s6kos"
+
+hurrykos   INCBIN "tilemap\res\enemytiles\hurrykos"    
+upkos      INCBIN "tilemap\res\enemytiles\upkos"
+STAGEkos   INCBIN "tilemap\res\enemytiles\STAGEkos"
+Numberskos INCBIN "tilemap\res\enemytiles\Numberskos"
+*===============================================================================================================
+
+
 
 *=========================================================================================================
  
-
-    
+  
 
 
 
